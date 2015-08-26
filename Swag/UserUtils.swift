@@ -17,10 +17,10 @@ class UserUtils {
     //MARK: Facebook Communication
     
     class func loginWithAccessToken(token: FBSDKAccessToken, block: (Void) -> Void) {
+        NSLog("UserUtils: loginWithAccessToken")
         PFFacebookUtils.logInInBackgroundWithAccessToken(token, block: { (user, error) -> Void in
             if UserUtils.noFacebookError(error) {
                 if let user = user {
-                    NSLog("%@", user)
                     if self.needFacebookInfo(user) {
                         UserUtils.getFacebookInfo(user, block: block)
                     } else {
@@ -33,9 +33,9 @@ class UserUtils {
         })
     }
     
-    
     class func login(block: (Void) -> Void) {
         //let permission = ["user_about_me", "user_relationships", "user_birthday", "user_location"];
+        NSLog("UserUtils: login")
         PFFacebookUtils.logInInBackgroundWithReadPermissions(nil, block: { (user, error) -> Void in
             if UserUtils.noFacebookError(error) {
                 if let user = user {
@@ -51,49 +51,53 @@ class UserUtils {
         })
     }
     
-    class func getFacebookFriends(block: (Void) -> Void) {
+    class func getFacebookFriendIds(block: ([String]) -> Void) {
+        NSLog("UserUtils: getFacebookFriendIds")
         UserUtils.makeFacebookGraphRequest("me?fields=friends", parameters: nil, block: { (result) -> Void in
+            var friendIds = [String]()
             if let resultDictionary = result as? [String: AnyObject] {
-                NSLog("%@", resultDictionary)
                 if let friends = resultDictionary["friends"] as? [String: AnyObject] {
                     if let friendPairs = friends["data"] as? [[String: String]] {
                         
-                        var friendIds = [String]()
                         for friendPair in friendPairs {
                             friendIds.append(friendPair["id"]!)
                         }
-                        
-                        NSLog("%@", friendIds)
                     }
                 }
             }
+            block(friendIds)
         })
-        
-        /*
-        [FBRequestConnection startForMyFriendsWithCompletionHandler:^(FBRequestConnection *connection, id result, NSError *error) {
-            if (!error) {
-            // result will contain an array with your user's friends in the "data" key
-            NSArray *friendObjects = [result objectForKey:@"data"];
-            NSMutableArray *friendIds = [NSMutableArray arrayWithCapacity:friendObjects.count];
-            // Create a list of friends' Facebook IDs
-            for (NSDictionary *friendObject in friendObjects) {
-            [friendIds addObject:[friendObject objectForKey:@"id"]];
+    }
+    
+    class func addFriend(facebookId: String) {
+        NSLog("UserUtils: addFriend")
+        let user = PFUser.currentUser()
+        if let user = PFUser.currentUser() {
+            if var friends = user.objectForKey("friendsFacebookIds") as? [String] {
+                friends.append(facebookId)
             }
-            
-            // Construct a PFUser query that will find friends whose facebook ids
-            // are contained in the current user's friend list.
-            PFQuery *friendQuery = [PFUser query];
-            [friendQuery whereKey:@"fbId" containedIn:friendIds];
-            
-            // findObjects will return a list of PFUsers that are friends
-            // with the current user
-            NSArray *friendUsers = [friendQuery findObjects];
-            }
-            }];
-*/
+            user.saveEventually()
+        }
+    }
+    
+    class func subscribeToFriend(facebookId: String) {
+        NSLog("UserUtils: subscribeToFriend")
+        let channel = facebookId + "channel"
+        let installation = PFInstallation.currentInstallation()
+        installation.addUniqueObject(channel, forKey: "channels")
+        installation.saveEventually()
+    }
+    
+    class func unsubscribeToFriend(facebookId: String) {
+        NSLog("UserUtils: unsubscribeToFriend")
+        let channel = facebookId + "channel"
+        let installation = PFInstallation.currentInstallation()
+        installation.removeObject(channel, forKey: "channels")
+        installation.saveEventually()
     }
     
     class func makeFacebookGraphRequest(path: String, parameters: [NSObject: AnyObject]?, block: (AnyObject) -> Void) {
+        NSLog("UserUtils: makeFacebookGraphRequest")
         let request = FBSDKGraphRequest(graphPath: path, parameters: parameters)
         request.startWithCompletionHandler { (connection, result, error) -> Void in
             if UserUtils.noFacebookError(error) {
@@ -104,6 +108,7 @@ class UserUtils {
     
     // This function checks that there is no Facebook error returned from a request, and if there is handles logging the user out if the session is invalid.
     private class func noFacebookError(error: NSError?) -> Bool {
+        NSLog("UserUtils: noFacebookError")
         if let err = error {
             if let errDict = error!.userInfo as? [String: AnyObject] {
                 if let errDict2 = errDict["error"] as? [String: AnyObject] {
@@ -122,6 +127,7 @@ class UserUtils {
     }
     
     private class func needFacebookInfo(user: PFUser) -> Bool {
+        NSLog("UserUtils: needFacebookInfo")
         if user.isNew || user["fbid"] == nil {
             return true
         }
@@ -130,13 +136,14 @@ class UserUtils {
     }
     
     private class func getFacebookInfo(user: PFUser, block: (Void) -> Void) {
+        NSLog("UserUtils: getFacebookInfo")
         UserUtils.makeFacebookGraphRequest("me?fields=id,name,first_name", parameters: nil, block: { (result) -> Void in
             if let userDict = result as? [String: String] {
                 let user = PFUser.currentUser()!
-                user["fbid"] = userDict["id"]
+                user["facebookId"] = userDict["id"]
                 user["firstName"] = userDict["first_name"]
                 user["name"] = userDict["name"]
-                user["friendsIds"] = [String]()
+                user["friendsFacebookIds"] = [String]()
                 
                 // Synchronously save the user for the first time login
                 user.saveEventually()
